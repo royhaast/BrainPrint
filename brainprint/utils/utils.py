@@ -9,6 +9,7 @@ from typing import Dict
 
 import numpy as np
 import pandas as pd
+import nibabel as nib
 
 
 def validate_environment() -> None:
@@ -167,6 +168,7 @@ def export_brainprint_results(
         eigenvectors_dir = destination.parent / "eigenvectors"
         eigenvectors_dir.mkdir(parents=True, exist_ok=True)
         for key, value in eigenvectors.items():
+            # Write to CSV file
             suffix = ".evecs-{key}.csv".format(key=key)
             name = destination.with_suffix(suffix).name
             vectors_destination = eigenvectors_dir / name
@@ -175,6 +177,19 @@ def export_brainprint_results(
                 index=True,
                 na_rep="NaN",
             )
+
+            # Write to surface overlay
+            suffix = ".evecs-{key}.shape.gii".format(key=key)
+            name = destination.with_suffix(suffix).name
+            vectors_destination = eigenvectors_dir / name
+            gii = nib.gifti.GiftiImage()
+            gii.add_gifti_data_array(
+                nib.gifti.GiftiDataArray(
+                    data=value.astype(np.float32)
+                    )
+            ) 
+            nib.save(gii, vectors_destination)
+        
         files["eigenvectors"] = eigenvectors_dir
 
     if distances is not None:

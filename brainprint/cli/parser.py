@@ -53,6 +53,24 @@ def parse_options():
         required=False,
     )
     optional.add_argument(
+        "--custom_seg",
+        dest="custom_seg",
+        help=help_text.CUSTOM_SEG,
+        default=None,
+        metavar="<path>",
+        required=False,
+        type=pathlib.Path,
+    )    
+    optional.add_argument(
+        "--custom_ind",
+        dest="custom_ind",
+        help=help_text.CUSTOM_IND,
+        default=None,
+        metavar="<path>",
+        required=False,
+        type=pathlib.Path,
+    )       
+    optional.add_argument(
         "--skipcortex",
         dest="skip_cortex",
         help=help_text.SKIP_CORTEX,
@@ -60,6 +78,23 @@ def parse_options():
         action="store_true",
         required=False,
     )
+    optional.add_argument(
+        "--smooth",
+        dest="smooth",
+        help=help_text.SMOOTH,
+        default=False,
+        action="store_true",
+        required=False,        
+    )
+    optional.add_argument(
+        "--ncpu",
+        dest="ncpu",
+        help=help_text.NCPU,
+        default=1,
+        metavar="<num>",
+        type=int,
+        required=False,
+    )  
     optional.add_argument(
         "--norm",
         dest="norm",

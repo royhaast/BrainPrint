@@ -195,8 +195,12 @@ def run_brainprint(
     subjects_dir: Path,
     subject_id: str,
     destination: Path = None,
+    custom_seg: Path = None,
+    custom_ind: Path = None,
     num: int = 50,
     skip_cortex: bool = False,
+    smooth: bool = False,
+    ncpu: int = 1,
     keep_eigenvectors: bool = False,
     norm: str = "none",
     reweight: bool = False,
@@ -218,12 +222,22 @@ def run_brainprint(
     destination : Path, optional
         If provided, will use this path as the results root directory, by
         default None
+    custom_seg : Path, optional
+        If provided, will use this segmentation for subcortical surfaces, by
+        default None
+    custom_ind : Path, optional
+        A custom list of indices should provided in case a custom segmentation
+        is used, by default None
     num : int, optional
         Number of eigenvalues to compute, by default 50
     norm : str, optional
         Eigenvalues normalization method, by default "none"
     reweight : bool, optional
         Whether to reweight eigenvalues or not, by default False
+    smooth : bool, optional
+        Whether to smooth subcortical surfaces or not, by default False
+    ncpu : int, optional
+        Number of CPUs to use during construction of surfaces, by default 1
     skip_cortex : bool, optional
         _description_, by default False
     keep_eigenvectors : bool, optional
@@ -255,7 +269,11 @@ def run_brainprint(
         destination=destination,
     )
 
-    surfaces = create_surfaces(subject_dir, destination, skip_cortex=skip_cortex)
+    surfaces = create_surfaces(
+        subject_dir, destination, custom_seg=custom_seg, custom_ind=custom_ind,
+        skip_cortex=skip_cortex, smooth=smooth, ncpu=ncpu
+    )
+
     eigenvalues, eigenvectors = compute_brainprint(
         surfaces,
         num=num,
@@ -271,6 +289,7 @@ def run_brainprint(
             eigenvalues,
             distance=asymmetry_distance,
             skip_cortex=skip_cortex,
+            custom_ind=custom_ind
         )
 
     csv_name = "{subject_id}.brainprint.csv".format(subject_id=subject_id)
@@ -292,7 +311,11 @@ class Brainprint:
         self,
         subjects_dir: Path,
         num: int = 50,
+        custom_seg: Path = None,
+        custom_ind: Path = None,
         skip_cortex: bool = False,
+        smooth: bool = False,
+        ncpu: int = 1,
         keep_eigenvectors: bool = False,
         norm: str = "none",
         reweight: bool = False,
@@ -316,8 +339,18 @@ class Brainprint:
             Eigenvalues normalization method, by default "none"
         reweight : bool, optional
             Whether to reweight eigenvalues or not, by default False
+        custom_seg : Path, optional
+            If provided, will use this segmentation for subcortical surfaces, by
+            default None
+        custom_ind : Path, optional
+            A custom list of indices should provided in case a custom segmentation
+            is used, by default None            
         skip_cortex : bool, optional
             _description_, by default False
+        smooth : bool, optional
+            Whether to smooth subcortical surfaces or not, by default False
+        ncpu : int, optional
+            Number of CPUs to use during construction of surfaces, by default 1                        
         keep_eigenvectors : bool, optional
             Whether to also return eigenvectors or not, by default False
         asymmetry : bool, optional
@@ -337,7 +370,11 @@ class Brainprint:
         self.subjects_dir = subjects_dir
         self.num = num
         self.norm = norm
+        self.custom_seg = custom_seg
+        self.custom_ind = custom_ind
         self.skip_cortex = skip_cortex
+        self.smooth = smooth
+        self.ncpu = ncpu
         self.reweight = reweight
         self.keep_eigenvectors = keep_eigenvectors
         self.asymmetry = asymmetry
@@ -365,8 +402,10 @@ class Brainprint:
         )
 
         surfaces = create_surfaces(
-            subject_dir, destination, skip_cortex=self.skip_cortex
+            subject_dir, destination, custom_seg=self.custom_seg, custom_ind=self.custom_ind,
+            skip_cortex=self.skip_cortex, smooth=self.smooth, ncpu=self.ncpu
         )
+
         self._eigenvalues, self._eigenvectors = compute_brainprint(
             surfaces,
             num=self.num,
@@ -381,6 +420,7 @@ class Brainprint:
                 self._eigenvalues,
                 distance=self.asymmetry_distance,
                 skip_cortex=self.skip_cortex,
+                custom_ind=self.custom_ind
             )
 
         self.cleanup(destination=destination)

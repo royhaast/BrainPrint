@@ -2,7 +2,7 @@
 Help text strings for the :mod:`brainprint.cli` module.
 """
 CLI_DESCRIPTION: str = (
-    "This program conducts a brainprint analysis of FreeSurfer output."
+    "This program conducts a brainprint analysis of FreeSurfer output (by default). Custom segmentations and indices can be used as well."
 )
 
 
@@ -11,9 +11,13 @@ SUBJECT_ID: str = (
 )
 SUBJECTS_DIR: str = "FreeSurfer subjects directory"
 OUTPUT_DIRECTORY: str = "Output directory (default: <sdir>/<sid>/brainprint)"
+CUSTOM_SEG: str = "Custom segmentation file (default: none)"
+CUSTOM_IND: str = "Custom list of indices (default: none)"
 NUM: str = "Number of eigenvalues/vectors to compute (default: 50)"
 EVEC: str = "Switch on eigenvector computation (default: off)"
 SKIP_CORTEX: str = "Skip cortical surfaces (default: off)"
+SMOOTH: str = "Smooth subcortical surfaces (default: off)"
+NCPU: str = "Number of CPUs to use during construction of surfaces (default: 1)"
 NORM: str = "Eigenvalues normalization method (default: none)"
 REWEIGHT: str = "Switch on eigenvalue reweighting (default: off)"
 ASYM: str = "Switch on additional asymmetry calculation (default: off)"
@@ -119,7 +123,11 @@ Required options:
 Processing directives:
     --num <num>      Number of eigenvalues/vectors to compute (default: 50)
     --evec           Switch on eigenvector computation (default: off)
+    --custom_seg     Use custom segmentation to reconstruct subcortical surfaces (default: none)
+    --custom_ind     Use custom list of indices to reconstruct subcortical surfaces (default: none)    
     --skipcortex     Skip cortical surfaces (default: off)
+    --smooth         Smooth subcortical surfaces (default: off)
+    --ncpu           Number of CPUs to use during construction of surfaces (default: 1)
     --norm <surface|volume|geometry|none>
                      Switch on eigenvalue normalization; will be either surface,
                      volume, or determined by the geometry of the object. Use

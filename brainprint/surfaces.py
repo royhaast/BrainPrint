@@ -1,22 +1,31 @@
 """
 Utility module holding surface generation related functions.
 """
+
 import uuid
+import json
 from pathlib import Path
 from typing import Dict, List
 
+from joblib import Parallel, delayed, dump, load
 from lapy import TriaMesh
 
 from .utils.utils import run_shell_command
 
-
 def create_aseg_surface(
-    subject_dir: Path, destination: Path, indices: List[int]
+    subject_dir: Path, destination: Path, label: str, indices: List[int],
+    custom_seg: Path, smooth: bool = False, ncpu: int = 1
 ) -> Path:
     """
     Creates a surface from the aseg and label files.
     """
-    aseg_path = subject_dir / "mri/aseg.mgz"
+
+    # Use custom label file if specified
+    if custom_seg.is_file():
+        aseg_path = custom_seg
+    else:
+        aseg_path = subject_dir / "mri/aseg.mgz"
+
     norm_path = subject_dir / "mri/norm.mgz"
     temp_name = "temp/aseg.{uid}".format(uid=uuid.uuid4())
     indices_mask = destination / f"{temp_name}.mgz"
@@ -52,21 +61,51 @@ def create_aseg_surface(
     )
     run_shell_command(extraction_command)
 
-    # convert to vtk
-    relative_path = "surfaces/aseg.final.{indices}.vtk".format(
-        indices="_".join(indices)
+    if smooth:
+        # optional smoothing
+        smoothing_template = "mris_smooth -nw {source} {destination}"
+        smoothing_command = smoothing_template.format(
+            source=surface_path, destination=surface_path
+        )
+
+        run_shell_command(smoothing_command)
+
+    # convert to gifti
+    relative_path = f"surfaces/aseg.final.{label}.surf.gii"
+    # relative_path = "surfaces/aseg.final.{indices}.surf.gii".format(
+    #     indices="_".join(indices)
+    # )
+    conversion_destination = destination / relative_path
+    conversion_template = "mris_convert --to-scanner {source} {destination}"
+    conversion_command = conversion_template.format(
+        source=surface_path, destination=conversion_destination
     )
+    run_shell_command(conversion_command)   
+
+    # convert to vtk
+    relative_path = f"surfaces/aseg.final.{label}.vtk"
+    # relative_path = "surfaces/aseg.final.{indices}.vtk".format(
+    #     indices="_".join(indices)
+    # )
     conversion_destination = destination / relative_path
     conversion_template = "mris_convert {source} {destination}"
     conversion_command = conversion_template.format(
         source=surface_path, destination=conversion_destination
     )
-    run_shell_command(conversion_command)
+    run_shell_command(conversion_command) 
 
-    return conversion_destination
+    if ncpu != 1:
+        return {
+            label: conversion_destination
+        }
+    else:
+        return conversion_destination
 
 
-def create_aseg_surfaces(subject_dir: Path, destination: Path) -> Dict[str, Path]:
+def create_aseg_surfaces(
+    subject_dir: Path, destination: Path, custom_seg: Path, 
+    custom_ind: Path, smooth: bool = False, ncpu: int = 1
+) -> Dict[str, Path]:
     # Define aseg labels
 
     # combined and individual aseg labels:
@@ -78,42 +117,64 @@ def create_aseg_surfaces(subject_dir: Path, destination: Path) -> Dict[str, Path
     # - Lateral-Ventricle: lat.vent + inf.lat.vent + choroidplexus
     # - 3rd-Ventricle: 3rd-Ventricle + CSF
 
-    aseg_labels = {
-        "CorpusCallosum": ["251", "252", "253", "254", "255"],
-        "Cerebellum": ["7", "8", "16", "46", "47"],
-        "Ventricles": ["4", "5", "14", "24", "31", "43", "44", "63"],
-        "3rd-Ventricle": ["14", "24"],
-        "4th-Ventricle": ["15"],
-        "Brain-Stem": ["16"],
-        "Left-Striatum": ["11", "12", "26"],
-        "Left-Lateral-Ventricle": ["4", "5", "31"],
-        "Left-Cerebellum-White-Matter": ["7"],
-        "Left-Cerebellum-Cortex": ["8"],
-        "Left-Thalamus-Proper": ["10"],
-        "Left-Caudate": ["11"],
-        "Left-Putamen": ["12"],
-        "Left-Pallidum": ["13"],
-        "Left-Hippocampus": ["17"],
-        "Left-Amygdala": ["18"],
-        "Left-Accumbens-area": ["26"],
-        "Left-VentralDC": ["28"],
-        "Right-Striatum": ["50", "51", "58"],
-        "Right-Lateral-Ventricle": ["43", "44", "63"],
-        "Right-Cerebellum-White-Matter": ["46"],
-        "Right-Cerebellum-Cortex": ["47"],
-        "Right-Thalamus-Proper": ["49"],
-        "Right-Caudate": ["50"],
-        "Right-Putamen": ["51"],
-        "Right-Pallidum": ["52"],
-        "Right-Hippocampus": ["53"],
-        "Right-Amygdala": ["54"],
-        "Right-Accumbens-area": ["58"],
-        "Right-VentralDC": ["60"],
-    }
-    return {
-        label: create_aseg_surface(subject_dir, destination, indices)
-        for label, indices in aseg_labels.items()
-    }
+    if custom_seg.is_file():
+        if custom_ind is None:
+            message = "Please provide a list of indices when using a custom segmentation"
+            raise RuntimeError(message)
+        elif custom_ind.is_file():
+            with open(custom_ind, "r") as read_file:
+                aseg_labels = json.load(read_file)
+                aseg_labels = aseg_labels['indices'][0]
+    else:
+        aseg_labels = {
+            "CorpusCallosum": ["251", "252", "253", "254", "255"],
+            "Cerebellum": ["7", "8", "16", "46", "47"],
+            "Ventricles": ["4", "5", "14", "24", "31", "43", "44", "63"],
+            "3rd-Ventricle": ["14", "24"],
+            "4th-Ventricle": ["15"],
+            "Brain-Stem": ["16"],
+            "Left-Striatum": ["11", "12", "26"],
+            "Left-Lateral-Ventricle": ["4", "5", "31"],
+            "Left-Cerebellum-White-Matter": ["7"],
+            "Left-Cerebellum-Cortex": ["8"],
+            "Left-Thalamus-Proper": ["10"],
+            "Left-Caudate": ["11"],
+            "Left-Putamen": ["12"],
+            "Left-Pallidum": ["13"],
+            "Left-Hippocampus": ["17"],
+            "Left-Amygdala": ["18"],
+            "Left-Accumbens-area": ["26"],
+            "Left-VentralDC": ["28"],
+            "Right-Striatum": ["50", "51", "58"],
+            "Right-Lateral-Ventricle": ["43", "44", "63"],
+            "Right-Cerebellum-White-Matter": ["46"],
+            "Right-Cerebellum-Cortex": ["47"],
+            "Right-Thalamus-Proper": ["49"],
+            "Right-Caudate": ["50"],
+            "Right-Putamen": ["51"],
+            "Right-Pallidum": ["52"],
+            "Right-Hippocampus": ["53"],
+            "Right-Amygdala": ["54"],
+            "Right-Accumbens-area": ["58"],
+            "Right-VentralDC": ["60"],
+        }
+
+    if ncpu != 1:
+        surfaces = Parallel(n_jobs=ncpu)(
+            delayed(create_aseg_surface)(
+                subject_dir, destination, label, indices, custom_seg, smooth, ncpu
+            ) for label, indices in aseg_labels.items()
+        )   
+
+        return {
+            label: conversion_destination for i in surfaces
+            for label, conversion_destination in i.items()
+        }
+    else:
+        return {
+            label: create_aseg_surface(subject_dir, destination, indices, custom_seg, smooth, ncpu)
+            for label, indices in aseg_labels.items()
+        }        
 
 
 def create_cortical_surfaces(subject_dir: Path, destination: Path) -> Dict[str, Path]:
@@ -133,9 +194,12 @@ def create_cortical_surfaces(subject_dir: Path, destination: Path) -> Dict[str, 
 
 
 def create_surfaces(
-    subject_dir: Path, destination: Path, skip_cortex: bool = False
+    subject_dir: Path, destination: Path, custom_seg: Path, custom_ind: Path,
+    skip_cortex: bool = False, smooth: bool = False, ncpu: int = 1
 ) -> Dict[str, Path]:
-    surfaces = create_aseg_surfaces(subject_dir, destination)
+    surfaces = create_aseg_surfaces(
+        subject_dir, destination, custom_seg, custom_ind, smooth, ncpu
+    )
     if not skip_cortex:
         cortical_surfaces = create_cortical_surfaces(subject_dir, destination)
         surfaces.update(cortical_surfaces)
