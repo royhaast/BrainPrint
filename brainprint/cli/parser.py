@@ -71,6 +71,14 @@ def parse_options():
         type=pathlib.Path,
     )       
     optional.add_argument(
+        "--tetrahedral",
+        dest="tetrahedral",
+        help=help_text.TETRAHEDRAL,
+        default=False,
+        action="store_true",
+        required=False,
+    )    
+    optional.add_argument(
         "--skipcortex",
         dest="skip_cortex",
         help=help_text.SKIP_CORTEX,

@@ -2,8 +2,10 @@
 Utility module holding surface generation related functions.
 """
 
+import os
 import uuid
 import json
+import subprocess
 from pathlib import Path
 from typing import Dict, List
 
@@ -14,7 +16,7 @@ from .utils.utils import run_shell_command
 
 def create_aseg_surface(
     subject_dir: Path, destination: Path, label: str, indices: List[int],
-    custom_seg: Path, smooth: bool = False, ncpu: int = 1
+    custom_seg: Path = None, smooth: bool = False, ncpu: int = 1
 ) -> Path:
     """
     Creates a surface from the aseg and label files.
@@ -27,7 +29,7 @@ def create_aseg_surface(
         aseg_path = subject_dir / "mri/aseg.mgz"
 
     norm_path = subject_dir / "mri/norm.mgz"
-    temp_name = "temp/aseg.{uid}".format(uid=uuid.uuid4())
+    temp_name = "temp/aseg.{label}".format(label=label)
     indices_mask = destination / f"{temp_name}.mgz"
     # binarize on selected labels (creates temp indices_mask)
     # always binarize first, otherwise pretess may scale aseg if labels are
@@ -72,9 +74,6 @@ def create_aseg_surface(
 
     # convert to gifti
     relative_path = f"surfaces/aseg.final.{label}.surf.gii"
-    # relative_path = "surfaces/aseg.final.{indices}.surf.gii".format(
-    #     indices="_".join(indices)
-    # )
     conversion_destination = destination / relative_path
     conversion_template = "mris_convert --to-scanner {source} {destination}"
     conversion_command = conversion_template.format(
@@ -84,15 +83,39 @@ def create_aseg_surface(
 
     # convert to vtk
     relative_path = f"surfaces/aseg.final.{label}.vtk"
-    # relative_path = "surfaces/aseg.final.{indices}.vtk".format(
-    #     indices="_".join(indices)
-    # )
     conversion_destination = destination / relative_path
-    conversion_template = "mris_convert {source} {destination}"
+    conversion_template = "mris_convert --to-scanner {source} {destination}"
     conversion_command = conversion_template.format(
         source=surface_path, destination=conversion_destination
     )
     run_shell_command(conversion_command) 
+
+    # create tetrahedral surface
+    tria_file = conversion_destination
+    geo_file = os.path.splitext(conversion_destination)[0] + '.geo'
+    tetra_file = os.path.splitext(conversion_destination)[0] + '.tetra.vtk'
+
+    file = str(tria_file).rsplit('/')
+    inputGeo = file[len(file)-1]
+    
+    with open(geo_file, 'w') as writer:
+        writer.write('Mesh.Algorithm3D=4;\n')
+        writer.write('Mesh.Optimize=1;\n')
+        writer.write('Mesh.OptimizeNetgen=1;\n')
+        writer.write('Merge "'+inputGeo+'";\n')
+        writer.write('Surface Loop(1) = {1};\n')
+        writer.write('Volume(1) = {1};\n')
+        writer.write('Physical Volume(1) = {1};\n')
+
+    cmd = 'gmsh -3 -o ' + tetra_file + ' ' + geo_file
+    output = subprocess.check_output(cmd, shell="True")
+    output = output.splitlines()
+
+    cmd = "sed 's/double/float/g;s/UNSTRUCTURED_GRID/POLYDATA/g;s/CELLS/POLYGONS/g;/CELL_TYPES/,$d' " + tetra_file + " > " + tetra_file + "'_fixed'"
+    os.system(cmd)
+    os.system('mv -f ' + tetra_file + '_fixed ' + tetra_file)
+
+    print("Finished generating surfaces")
 
     if ncpu != 1:
         return {
@@ -103,8 +126,8 @@ def create_aseg_surface(
 
 
 def create_aseg_surfaces(
-    subject_dir: Path, destination: Path, custom_seg: Path, 
-    custom_ind: Path, smooth: bool = False, ncpu: int = 1
+    subject_dir: Path, destination: Path, custom_seg: Path = None, 
+    custom_ind: Path = None, smooth: bool = False, ncpu: int = 1
 ) -> Dict[str, Path]:
     # Define aseg labels
 

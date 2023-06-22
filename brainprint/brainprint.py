@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Dict, Tuple, Union
 
 import numpy as np
-from lapy import TriaMesh, shapedna
+from lapy import TriaMesh, TetMesh, shapedna
 
 from . import __version__
 from .asymmetry import compute_asymmetry
 from .surfaces import create_surfaces, read_vtk
+from .tetra_brainprint import calc_volume_eigenmodes
 from .utils.utils import (
     create_output_paths,
     export_brainprint_results,
@@ -125,8 +126,49 @@ def compute_surface_brainprint(
     return eigenvalues, eigenvectors
 
 
+def compute_volume_brainprint(
+    label: str,
+    destination: Path = None,
+    num: int = 50,
+    norm: str = 'none',
+    norm_factor=1
+):
+
+    # subject id
+    sid = str(destination).split('/')[-1:][0]
+
+    # create output folder if doesn't exist
+    Path(
+        destination / "eigenvectors"
+    ).mkdir(parents=True, exist_ok=True)
+
+    tetra_file = destination / f"surfaces/aseg.final.{label}.tetra.vtk"
+    nifti_input_filename = destination / f"temp/aseg.{label}.mgz"
+    nifti_output_filename = destination / f"eigenvectors/{sid}.brainprint.emodes-vol.{label}.nii.gz"
+    output_eval_filename = destination / f"eigenvectors/{sid}.brainprint.evals-vol.{label}.txt"
+    output_emode_filename = destination / f"eigenvectors/{sid}.brainprint.emodes-vol.{label}.txt"
+
+    eigenvalues = calc_volume_eigenmodes(
+        tetra_file,
+        nifti_input_filename, nifti_output_filename,
+        output_eval_filename, output_emode_filename,
+        num, norm, norm_factor
+    )
+
+    eigenvalues = np.concatenate(
+        (
+            np.array(np.nan, ndmin=1),
+            np.array(np.nan, ndmin=1),
+            eigenvalues,
+        )
+    )
+
+    return eigenvalues
+
 def compute_brainprint(
     surfaces: Dict[str, Path],
+    destination: Path = None,
+    tetrahedral: bool = False,
     keep_eigenvectors: bool = False,
     num: int = 50,
     norm: str = "none",
@@ -162,33 +204,57 @@ def compute_brainprint(
     eigenvalues = dict()
     eigenvectors = dict() if keep_eigenvectors else None
     for surface_label, surface_path in surfaces.items():
-        try:
-            (
-                surface_eigenvalues,
-                surface_eigenvectors,
-            ) = compute_surface_brainprint(
-                surface_path,
-                num=num,
-                norm=norm,
-                reweight=reweight,
-                return_eigenvectors=keep_eigenvectors,
-                use_cholmod=use_cholmod,
-            )
-        except Exception as e:
-            message = (
-                "BrainPrint analysis raised the following exception:\n"
-                "{exception}".format(exception=e)
-            )
-            warnings.warn(message)
-            eigenvalues[surface_label] = ["NaN"] * (num + 2)
+        if tetrahedral:
+            try:
+                volume_eigenvalues = compute_volume_brainprint(
+                    surface_label,
+                    destination=destination,
+                    num=num,
+                    norm=norm,
+                    norm_factor=1
+                )
+            except Exception as e:
+                message = (
+                    "BrainPrint analysis raised the following exception:\n"
+                    "{exception}".format(exception=e)
+                )
+                warnings.warn(message)
+                eigenvalues[surface_label] = ["NaN"] * (num + 2)            
+            else:
+                if len(volume_eigenvalues) == 0:
+                    eigenvalues[surface_label] = ["NaN"] * (num + 2)
+                else:
+                    eigenvalues[surface_label] = volume_eigenvalues
+
         else:
-            if len(surface_eigenvalues) == 0:
+            try:
+                (
+                    surface_eigenvalues,
+                    surface_eigenvectors,
+                ) = compute_surface_brainprint(
+                    surface_path,
+                    num=num,
+                    norm=norm,
+                    reweight=reweight,
+                    return_eigenvectors=keep_eigenvectors,
+                    use_cholmod=use_cholmod,
+                )
+            except Exception as e:
+                message = (
+                    "BrainPrint analysis raised the following exception:\n"
+                    "{exception}".format(exception=e)
+                )
+                warnings.warn(message)
                 eigenvalues[surface_label] = ["NaN"] * (num + 2)
             else:
-                eigenvalues[surface_label] = surface_eigenvalues
-            if keep_eigenvectors:
-                eigenvectors[surface_label] = surface_eigenvectors
-    return eigenvalues, eigenvectors
+                if len(surface_eigenvalues) == 0:
+                    eigenvalues[surface_label] = ["NaN"] * (num + 2)
+                else:
+                    eigenvalues[surface_label] = surface_eigenvalues
+                if keep_eigenvectors:
+                    eigenvectors[surface_label] = surface_eigenvectors
+
+    return eigenvalues, None if tetrahedral else eigenvectors
 
 
 def run_brainprint(
@@ -199,6 +265,7 @@ def run_brainprint(
     custom_ind: Path = None,
     num: int = 50,
     skip_cortex: bool = False,
+    tetrahedral: bool = False,
     smooth: bool = False,
     ncpu: int = 1,
     keep_eigenvectors: bool = False,
@@ -240,6 +307,8 @@ def run_brainprint(
         Number of CPUs to use during construction of surfaces, by default 1
     skip_cortex : bool, optional
         _description_, by default False
+    tetrahedral : bool, optional
+        Whether to use tetrahedral surfaces, by default False
     keep_eigenvectors : bool, optional
         Whether to also return eigenvectors or not, by default False
     asymmetry : bool, optional
@@ -269,13 +338,21 @@ def run_brainprint(
         destination=destination,
     )
 
-    surfaces = create_surfaces(
-        subject_dir, destination, custom_seg=custom_seg, custom_ind=custom_ind,
-        skip_cortex=skip_cortex, smooth=smooth, ncpu=ncpu
-    )
+    # surfaces = create_surfaces(
+    #     subject_dir, destination, custom_seg=custom_seg, custom_ind=custom_ind,
+    #     skip_cortex=skip_cortex, smooth=smooth, ncpu=ncpu
+    # )
 
+    surfaces = {
+        'Left-ThalamusWhole': Path('derivatives/brainprint_tetra/sub-C030/surfaces/aseg.final.Left-ThalamusWhole.vtk'),
+        'Right-ThalamusWhole': Path('derivatives/brainprint_tetra/sub-C030/surfaces/aseg.final.Right-ThalamusWhole.vtk')
+    }
+
+    # Test implementation of volume-based eigenmodes
     eigenvalues, eigenvectors = compute_brainprint(
         surfaces,
+        destination=destination,
+        tetrahedral=tetrahedral,
         num=num,
         norm=norm,
         reweight=reweight,
@@ -294,13 +371,15 @@ def run_brainprint(
 
     csv_name = "{subject_id}.brainprint.csv".format(subject_id=subject_id)
     csv_path = destination / csv_name
+
     export_brainprint_results(csv_path, eigenvalues, eigenvectors, distances)
-    if not keep_temp:
-        shutil.rmtree(destination / "temp")
-    print(
-        "Returning matrices for eigenvalues, eigenvectors, and (optionally) distances."
-    )
+    print("Returning matrices for eigenvalues, eigenvectors, and (optionally) distances.")
     print("The eigenvalue matrix contains area and volume as first two rows.")
+
+    if not keep_temp:
+        shutil.rmtree(destination / "temp")    
+
+    # return eigenvalues, eigenvectors, distances
     return eigenvalues, eigenvectors, distances
 
 
@@ -314,6 +393,7 @@ class Brainprint:
         custom_seg: Path = None,
         custom_ind: Path = None,
         skip_cortex: bool = False,
+        tetrahedral: bool = False,
         smooth: bool = False,
         ncpu: int = 1,
         keep_eigenvectors: bool = False,
@@ -373,6 +453,7 @@ class Brainprint:
         self.custom_seg = custom_seg
         self.custom_ind = custom_ind
         self.skip_cortex = skip_cortex
+        self.tetrahedral = tetrahedral
         self.smooth = smooth
         self.ncpu = ncpu
         self.reweight = reweight
@@ -408,6 +489,7 @@ class Brainprint:
 
         self._eigenvalues, self._eigenvectors = compute_brainprint(
             surfaces,
+            tetrahedral=self.tetrahedral,
             num=self.num,
             norm=self.norm,
             reweight=self.reweight,

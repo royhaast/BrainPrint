@@ -15,6 +15,7 @@ CUSTOM_SEG: str = "Custom segmentation file (default: none)"
 CUSTOM_IND: str = "Custom list of indices (default: none)"
 NUM: str = "Number of eigenvalues/vectors to compute (default: 50)"
 EVEC: str = "Switch on eigenvector computation (default: off)"
+TETRAHEDRAL: str = "Use tetrahedral instead of triangular surfaces (default: off)"
 SKIP_CORTEX: str = "Skip cortical surfaces (default: off)"
 SMOOTH: str = "Smooth subcortical surfaces (default: off)"
 NCPU: str = "Number of CPUs to use during construction of surfaces (default: 1)"
@@ -125,6 +126,7 @@ Processing directives:
     --evec           Switch on eigenvector computation (default: off)
     --custom_seg     Use custom segmentation to reconstruct subcortical surfaces (default: none)
     --custom_ind     Use custom list of indices to reconstruct subcortical surfaces (default: none)    
+    --tetrahedral    Use tetrahedral instead of triangular surfaces (default: off)
     --skipcortex     Skip cortical surfaces (default: off)
     --smooth         Smooth subcortical surfaces (default: off)
     --ncpu           Number of CPUs to use during construction of surfaces (default: 1)
